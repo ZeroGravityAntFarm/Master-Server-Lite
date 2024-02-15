@@ -1,10 +1,11 @@
 use actix_web::{get, web, App, HttpResponse, HttpServer, HttpRequest, Responder};
 use serde::Serialize;
 use serde::Deserialize;
-use serde_json;
+//use serde_json;
 use std::{
     net::SocketAddr,
     sync::Mutex,
+    time::SystemTime
 };
 
 
@@ -13,6 +14,7 @@ use std::{
 struct ServerObject {
     ip: Option<SocketAddr>,
     port: i32,
+    time: SystemTime,
 }
 
 
@@ -46,6 +48,8 @@ async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta
     let serverinstance = ServerObject {
         ip: req.peer_addr(),
         port: servermeta.port,
+        time: SystemTime::now(),
+
     };
 
     serverlist.push(serverinstance);
@@ -56,11 +60,12 @@ async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta
 //List all servers in serverlist
 #[get("/list")]
 async fn list(data: web::Data<ServerList>) -> impl Responder {
-    let serverlist = data.list.lock().unwrap();
+    let mut serverlist = data.list.lock().unwrap();
+    
+    //Much faster than .remove() as rust doesnt have to iterate over the vector for each element then shift indexes after removal
+    serverlist.retain(|server| SystemTime::now().duration_since(server.time).unwrap().as_secs() <= 60);
 
-    for server in serverlist.iter() {
-        println!("{:#?}", server);
-    }
+    println!("{:#?}", serverlist);
 
     HttpResponse::Ok().body("json")
 }
