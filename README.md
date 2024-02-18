@@ -9,5 +9,5 @@ docker build . -t masterserver
 
 ## Start
 ```
-docker run -d  --name edmaster -p 127.0.0.1:$port:8080 masterserver
+docker run -d  --name edmaster -p 0.0.0.0:80:8080 masterserver
 ```
