@@ -9,33 +9,44 @@ use std::{
 };
 
 
-//Struct to store server data
 #[derive(Serialize, Debug, Clone)]
 struct ServerObject {
     pub ip: IpAddr,
-    pub port: i32,
+    pub port: i64,
     pub time: SystemTime,
 }
 
 
-//Server json 
+#[derive(Serialize)]
+struct Result {
+    pub listVersion: u8,
+    pub code: u8,
+    pub servers: Vec<String>,
+    pub msg: String
+
+}
+
+#[derive(Serialize)]
+pub struct Response {
+    result: Result
+}
+
+
 #[derive(Serialize, Debug)]
 struct ServerJson {
     ipport: String
 }
 
 
-//List struct that builds our server vector with a mutex
 #[derive(Serialize)]
 struct ServerList {
     pub list: Mutex<Vec<ServerObject>>,
 }
 
 
-//Sanitize query params
 #[derive(Deserialize)]
 struct ServerMeta {
-    port: i32,
+    port: i64
 }
 
 
@@ -61,17 +72,19 @@ async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta
 
     //Check for existing server ip/port in the vector 
     if serverlist.len() > 0 {
-        for mut server in serverlist.clone() {
-            if (server.ip == val.expect("").ip()) && (server.port == servermeta.port) {
-                server.ip = val.expect("").ip();
-                server.port = servermeta.port;
-                server.time = SystemTime::now();
-            } else {
-                serverlist.push(serverinstance.clone());
+        if serverlist.iter().any(|server| (server.ip == val.expect("").ip()) && (server.port == servermeta.port)) {
+            for i in 1..serverlist.len() {
+                if (serverlist[i].ip == val.expect("").ip()) && (serverlist[i].port == servermeta.port) {
+                    serverlist[i].ip = val.expect("").ip();
+                    serverlist[i].port = servermeta.port;
+                    serverlist[i].time = SystemTime::now();
+                };
             }
+        } else {
+            serverlist.push(serverinstance.clone());
         }
     } else {
-        serverlist.push(serverinstance);
+        serverlist.push(serverinstance.clone());
     }
 
     HttpResponse::Ok().json("success")
@@ -82,6 +95,7 @@ async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta
 #[get("/list")]
 async fn list(data: web::Data<ServerList>) -> impl Responder {
     let mut serverlist = data.list.lock().unwrap();
+    let mut formattedlist = Vec::new();
     
     //Prune all servers in the list outside the ttk threshold
     //Much faster than .remove() as rust doesnt have to iterate over the vector for each element then shift indexes after removal
@@ -94,17 +108,23 @@ async fn list(data: web::Data<ServerList>) -> impl Responder {
             let server_ip = server.ip.to_string();
             let server_port = server.port.to_string();
             let server_address = format!("{}:{}", server_ip, server_port);
-            
-            let server_instance = ServerJson {
-                ipport: server_address
-            };
-            println!("{:#?}", server_instance);
+
+            formattedlist.push(server_address);
         }
     }
 
-    let response_body = serde_json::to_string(&*serverlist).unwrap();
+    let result = Result {
+        listVersion: 1,
+        code: 0,
+        servers: formattedlist,
+        msg: "OK".to_string()
+    };
 
-    HttpResponse::Ok().body(response_body)
+    let response = Response{
+        result
+    };
+
+    HttpResponse::Ok().json(response)
 }
 
 
