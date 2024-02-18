@@ -1,4 +1,5 @@
 use actix_web::{get, web, App, HttpResponse, HttpServer, HttpRequest, Responder};
+use actix_web::dev::ConnectionInfo;
 use std::net::IpAddr;
 use serde::Serialize;
 use serde::Deserialize;
@@ -11,7 +12,7 @@ use std::{
 
 #[derive(Serialize, Debug, Clone)]
 struct ServerObject {
-    pub ip: IpAddr,
+    pub ip: String,
     pub port: i64,
     pub time: SystemTime,
 }
@@ -59,23 +60,24 @@ async fn hello() -> impl Responder {
 
 //Endpoint to handle server registration
 #[get("/announce")]
-async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta>, req: HttpRequest) -> impl Responder {
+async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta>, req: HttpRequest, conn: ConnectionInfo) -> impl Responder {
     let mut serverlist = data.list.lock().unwrap();
-    let val = req.peer_addr();
+    //let val = req.peer_addr();
+    let real_ip = conn.realip_remote_addr().expect("ope").to_string();
 
     let serverinstance = ServerObject {
-        ip: val.expect("Someone connected without an ip!!1").ip(),
+        ip: real_ip.clone(),
         port: servermeta.port,
         time: SystemTime::now(),
 
     };
 
-    //Check for existing server ip/port in the vector 
+    //Check for existing server ip/port in the vector
     if serverlist.len() > 0 {
-        if serverlist.iter().any(|server| (server.ip == val.expect("").ip()) && (server.port == servermeta.port)) {
+        if serverlist.iter().any(|server| (server.ip == real_ip) && (server.port == servermeta.port)) {
             for i in 1..serverlist.len() {
-                if (serverlist[i].ip == val.expect("").ip()) && (serverlist[i].port == servermeta.port) {
-                    serverlist[i].ip = val.expect("").ip();
+                if (serverlist[i].ip == real_ip) && (serverlist[i].port == servermeta.port) {
+                    serverlist[i].ip = real_ip.clone();
                     serverlist[i].port = servermeta.port;
                     serverlist[i].time = SystemTime::now();
                 };
@@ -96,10 +98,10 @@ async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta
 async fn list(data: web::Data<ServerList>) -> impl Responder {
     let mut serverlist = data.list.lock().unwrap();
     let mut formattedlist = Vec::new();
-    
+
     //Prune all servers in the list outside the ttk threshold
     //Much faster than .remove() as rust doesnt have to iterate over the vector for each element then shift indexes after removal
-    serverlist.retain(|server| SystemTime::now().duration_since(server.time).unwrap().as_secs() <= 30);
+    serverlist.retain(|server| SystemTime::now().duration_since(server.time).unwrap().as_secs() <= 300);
     println!("{:#?}", serverlist);
 
     //ToDo: Copy all of our server records to new structs that are more friendly for json formatting then ship
@@ -146,7 +148,7 @@ async fn main() -> std::io::Result<()> {
             .service(list)
     })
 
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 8080))?
     .run()
     .await
 }
