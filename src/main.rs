@@ -10,7 +10,7 @@ use std::{
 
 
 //Struct to store server data
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 struct ServerObject {
     pub ip: IpAddr,
     pub port: i32,
@@ -61,13 +61,13 @@ async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta
 
     //Check for existing server ip/port in the vector 
     if serverlist.len() > 0 {
-        for server in serverlist.iter_mut() {
+        for mut server in serverlist.clone() {
             if (server.ip == val.expect("").ip()) && (server.port == servermeta.port) {
                 server.ip = val.expect("").ip();
                 server.port = servermeta.port;
                 server.time = SystemTime::now();
             } else {
-                serverlist.push(serverinstance);
+                serverlist.push(serverinstance.clone());
             }
         }
     } else {
@@ -85,7 +85,7 @@ async fn list(data: web::Data<ServerList>) -> impl Responder {
     
     //Prune all servers in the list outside the ttk threshold
     //Much faster than .remove() as rust doesnt have to iterate over the vector for each element then shift indexes after removal
-    serverlist.retain(|server| SystemTime::now().duration_since(server.time).unwrap().as_secs() <= 60);
+    serverlist.retain(|server| SystemTime::now().duration_since(server.time).unwrap().as_secs() <= 30);
     println!("{:#?}", serverlist);
 
     //ToDo: Copy all of our server records to new structs that are more friendly for json formatting then ship
@@ -98,10 +98,8 @@ async fn list(data: web::Data<ServerList>) -> impl Responder {
             let server_instance = ServerJson {
                 ipport: server_address
             };
-
             println!("{:#?}", server_instance);
         }
-
     }
 
     let response_body = serde_json::to_string(&*serverlist).unwrap();
