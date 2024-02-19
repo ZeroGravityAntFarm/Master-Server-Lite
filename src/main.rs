@@ -13,7 +13,7 @@ use std::{
 #[derive(Serialize, Debug, Clone)]
 struct ServerObject {
     pub ip: String,
-    pub port: i64,
+    pub port: u16,
     pub time: SystemTime,
 }
 
@@ -47,7 +47,7 @@ struct ServerList {
 
 #[derive(Deserialize)]
 struct ServerMeta {
-    port: i64
+    port: u16
 }
 
 
