@@ -1,9 +1,8 @@
-use actix_web::{get, web, App, HttpResponse, HttpServer, HttpRequest, Responder};
+use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
 use actix_web::dev::ConnectionInfo;
-use std::net::IpAddr;
+use actix_cors::Cors;
 use serde::Serialize;
 use serde::Deserialize;
-use serde_json;
 use std::{
     sync::Mutex,
     time::SystemTime
@@ -60,7 +59,7 @@ async fn hello() -> impl Responder {
 
 //Endpoint to handle server registration
 #[get("/announce")]
-async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta>, req: HttpRequest, conn: ConnectionInfo) -> impl Responder {
+async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta>, conn: ConnectionInfo) -> impl Responder {
     let mut serverlist = data.list.lock().unwrap();
     //let val = req.peer_addr();
     let real_ip = conn.realip_remote_addr().expect("ope").to_string();
@@ -139,9 +138,13 @@ async fn main() -> std::io::Result<()> {
     let serverlist = web::Data::new(ServerList {
         list: Mutex::new(Vec::<ServerObject>::new()),
     });
-
+    
     HttpServer::new(move || {
+        //We ball
+        let cors = Cors::permissive();
+
         App::new()
+            .wrap(cors)
             .app_data(serverlist.clone())
             .service(hello)
             .service(announce)
