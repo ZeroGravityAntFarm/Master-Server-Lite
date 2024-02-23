@@ -1,8 +1,12 @@
 use actix_web::{get, web, App, HttpResponse, HttpServer, Responder};
 use actix_web::dev::ConnectionInfo;
+use actix_web::HttpRequest;
 use actix_cors::Cors;
+use awc::Client;
+use std::time::Duration;
 use serde::Serialize;
 use serde::Deserialize;
+
 use std::{
     sync::Mutex,
     time::SystemTime
@@ -57,11 +61,16 @@ async fn hello() -> impl Responder {
 }
 
 
+//Check existance of game server headers
+fn get_server_header<'a>(req: &'a HttpRequest) -> Option<&'a str> {
+    req.headers().get("User-Agent")?.to_str().ok()
+}
+
+
 //Endpoint to handle server registration
 #[get("/announce")]
-async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta>, conn: ConnectionInfo) -> impl Responder {
+async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta>, conn: ConnectionInfo, req: HttpRequest) -> impl Responder {
     let mut serverlist = data.list.lock().unwrap();
-    //let val = req.peer_addr();
     let real_ip = conn.realip_remote_addr().expect("ope").to_string();
 
     let serverinstance = ServerObject {
@@ -70,6 +79,30 @@ async fn announce(data: web::Data<ServerList>, servermeta: web::Query<ServerMeta
         time: SystemTime::now(),
 
     };
+
+
+    //Verify the server endpoint is accessible (This cuts out servers with bad port forwards or malicious annoucements)
+    let client = Client::new();
+    let server_endpoint = format!("http://{}:{}", real_ip.clone(), servermeta.port);
+    let endpoint_result = client.get(server_endpoint).timeout(Duration::from_secs(3)).send().await;
+
+    if endpoint_result.is_err() {
+        println!("Bad Server");
+        return HttpResponse::Ok().json("Bad Server");
+    }
+
+
+    //Check game server headers
+    let header_vec = vec!["ElDewrito/0.6.1.0", "ElDewrito/0.5.1.1"];
+    if let Some(server_header) = get_server_header(&req) {
+        if !header_vec.contains(&server_header) {
+            println!("{}", server_header);
+            return HttpResponse::Ok().json("Bad Headers");
+        }
+    } else {
+        return HttpResponse::Ok().json("Bad Headers");
+    }
+
 
     //Check for existing server ip/port in the vector
     if serverlist.len() > 0 {
@@ -100,6 +133,7 @@ async fn list(data: web::Data<ServerList>) -> impl Responder {
 
     //Prune all servers in the list outside the ttk threshold
     //Much faster than .remove() as rust doesnt have to iterate over the vector for each element then shift indexes after removal
+    //Retain creates a copy of only the records we want based on the operation provided and destroys the old vector
     serverlist.retain(|server| SystemTime::now().duration_since(server.time).unwrap().as_secs() <= 300);
     println!("{:#?}", serverlist);
 
@@ -138,7 +172,7 @@ async fn main() -> std::io::Result<()> {
     let serverlist = web::Data::new(ServerList {
         list: Mutex::new(Vec::<ServerObject>::new()),
     });
-    
+
     HttpServer::new(move || {
         //We ball
         let cors = Cors::permissive();
